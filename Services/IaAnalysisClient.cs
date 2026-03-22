@@ -5,7 +5,9 @@ namespace POCLeituradeVozCliente.Services;
 
 public class IaAnalysisClient : IIaAnalysisClient
 {
-    private const string IaEndpoint = "https://localhost:44332/IA/v1/consulta-openai";
+    private const string IaEndpoint = "https://apiiadev-gjenhsf0cpbvg3hm.canadacentral-01.azurewebsites.net/api/IA/chat";
+    private const string DefaultModel = "gpt-4o-mini";
+    private const double DefaultTemperature = 0.8;
     private readonly IHttpClientFactory _httpClientFactory;
 
     public IaAnalysisClient(IHttpClientFactory httpClientFactory)
@@ -16,11 +18,24 @@ public class IaAnalysisClient : IIaAnalysisClient
     public async Task<string> AnalyzeAsync(string prompt, string text, int maxTokens, CancellationToken cancellationToken)
     {
         var client = _httpClientFactory.CreateClient("IaClient");
+        var systemPromptBuilder = new StringBuilder(prompt ?? string.Empty);
+
+        if (maxTokens > 0)
+        {
+            if (systemPromptBuilder.Length > 0)
+            {
+                systemPromptBuilder.AppendLine().AppendLine();
+            }
+
+            systemPromptBuilder.Append($"Limite sua resposta a aproximadamente {maxTokens} tokens equivalentes.");
+        }
+
         var payload = new
         {
-            prompt,
-            text,
-            maxTokens
+            prompt = text ?? string.Empty,
+            systemPrompt = systemPromptBuilder.ToString(),
+            model = DefaultModel,
+            temperature = DefaultTemperature
         };
 
         using var request = new HttpRequestMessage(HttpMethod.Post, IaEndpoint)
@@ -32,6 +47,12 @@ public class IaAnalysisClient : IIaAnalysisClient
         var content = await response.Content.ReadAsStringAsync(cancellationToken);
 
         response.EnsureSuccessStatusCode();
+
+        using var document = JsonDocument.Parse(content);
+        if (TryExtractChatMessage(document.RootElement, out var message))
+        {
+            return message;
+        }
 
         return ExtractText(content);
     }
@@ -84,5 +105,58 @@ public class IaAnalysisClient : IIaAnalysisClient
         }
 
         return element.ToString();
+    }
+
+    private static bool TryExtractChatMessage(JsonElement rootElement, out string result)
+    {
+        result = string.Empty;
+
+        if (rootElement.TryGetProperty("choices", out var choicesElement) &&
+            choicesElement.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var choice in choicesElement.EnumerateArray())
+            {
+                if (choice.ValueKind != JsonValueKind.Object)
+                {
+                    continue;
+                }
+
+                if (choice.TryGetProperty("message", out var messageElement) &&
+                    messageElement.ValueKind == JsonValueKind.Object &&
+                    messageElement.TryGetProperty("content", out var contentElement))
+                {
+                    var value = contentElement.GetString();
+                    if (!string.IsNullOrWhiteSpace(value))
+                    {
+                        result = value!;
+                        return true;
+                    }
+                }
+
+                if (choice.TryGetProperty("text", out var textElement))
+                {
+                    var value = textElement.GetString();
+                    if (!string.IsNullOrWhiteSpace(value))
+                    {
+                        result = value!;
+                        return true;
+                    }
+                }
+            }
+        }
+
+        if (rootElement.TryGetProperty("message", out var singleMessageElement) &&
+            singleMessageElement.ValueKind == JsonValueKind.Object &&
+            singleMessageElement.TryGetProperty("content", out var singleContentElement))
+        {
+            var value = singleContentElement.GetString();
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                result = value!;
+                return true;
+            }
+        }
+
+        return false;
     }
 }
