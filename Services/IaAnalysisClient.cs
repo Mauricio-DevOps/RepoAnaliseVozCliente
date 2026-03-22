@@ -18,22 +18,10 @@ public class IaAnalysisClient : IIaAnalysisClient
     public async Task<string> AnalyzeAsync(string prompt, string text, int maxTokens, CancellationToken cancellationToken)
     {
         var client = _httpClientFactory.CreateClient("IaClient");
-        var systemPromptBuilder = new StringBuilder(prompt ?? string.Empty);
-
-        if (maxTokens > 0)
-        {
-            if (systemPromptBuilder.Length > 0)
-            {
-                systemPromptBuilder.AppendLine().AppendLine();
-            }
-
-            systemPromptBuilder.Append($"Limite sua resposta a aproximadamente {maxTokens} tokens equivalentes.");
-        }
-
         var payload = new
         {
-            prompt = text ?? string.Empty,
-            systemPrompt = systemPromptBuilder.ToString(),
+            prompt = BuildUserPrompt(text),
+            systemPrompt = BuildSystemPrompt(prompt, maxTokens),
             model = DefaultModel,
             temperature = DefaultTemperature
         };
@@ -55,6 +43,36 @@ public class IaAnalysisClient : IIaAnalysisClient
         }
 
         return ExtractText(content);
+    }
+
+    private static string BuildSystemPrompt(string? prompt, int maxTokens)
+    {
+        var builder = new StringBuilder();
+
+        if (!string.IsNullOrWhiteSpace(prompt))
+        {
+            builder.AppendLine(prompt.Trim());
+        }
+
+        if (maxTokens > 0)
+        {
+            if (builder.Length > 0)
+            {
+                builder.AppendLine();
+            }
+
+            builder.Append($"Procure limitar a resposta a aproximadamente {maxTokens} tokens equivalentes.");
+        }
+
+        return builder.ToString();
+    }
+
+    private static string BuildUserPrompt(string? text)
+    {
+        var trimmed = text?.Trim();
+        return string.IsNullOrEmpty(trimmed)
+            ? "Nao ha texto para analisar. Informe um feedback valido."
+            : trimmed;
     }
 
     private static string ExtractText(string content)
