@@ -1,3 +1,4 @@
+using System.IO;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using Microsoft.Extensions.Options;
@@ -19,30 +20,46 @@ public class OpenAiAudioTranscriptionService : IOpenAiAudioTranscriptionService
         _options = options.Value;
     }
 
-    public async Task<string> TranscribeAsync(string audioFilePath, CancellationToken cancellationToken)
+    public async Task<string> TranscribeAsync(Stream audioStream, string fileName, string? contentType, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(_options.ApiKey))
         {
             throw new InvalidOperationException("Configure a chave da OpenAI em OpenAiAudio:ApiKey.");
         }
 
-        if (!File.Exists(audioFilePath))
+        if (audioStream is null)
         {
-            throw new FileNotFoundException("Arquivo de audio nao encontrado.", audioFilePath);
+            throw new ArgumentNullException(nameof(audioStream));
         }
+
+        if (!audioStream.CanRead)
+        {
+            throw new InvalidOperationException("O stream de audio nao pode ser lido.");
+        }
+
+        if (audioStream.CanSeek)
+        {
+            audioStream.Position = 0;
+        }
+
+        var safeFileName = string.IsNullOrWhiteSpace(fileName)
+            ? $"gravacao-{DateTime.UtcNow:yyyyMMddHHmmss}.webm"
+            : Path.GetFileName(fileName);
 
         var client = _httpClientFactory.CreateClient("OpenAiAudioClient");
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _options.ApiKey);
 
-        await using var audioStream = File.OpenRead(audioFilePath);
         using var audioContent = new StreamContent(audioStream);
-        audioContent.Headers.ContentType = new MediaTypeHeaderValue("audio/webm");
+        var mediaType = string.IsNullOrWhiteSpace(contentType)
+            ? "audio/webm"
+            : contentType;
+        audioContent.Headers.ContentType = new MediaTypeHeaderValue(mediaType);
 
         using var formData = new MultipartFormDataContent
         {
             { new StringContent(_options.Model), "model" },
             { new StringContent(_options.Language), "language" },
-            { audioContent, "file", Path.GetFileName(audioFilePath) }
+            { audioContent, "file", safeFileName }
         };
 
         using var response = await client.PostAsync(AudioTranscriptionEndpoint, formData, cancellationToken);

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using POCLeituradeVozCliente.Models;
@@ -100,26 +101,27 @@ namespace POCLeituradeVozCliente.Controllers
                 return View("PocVozDoCliente", emptyFileModel);
             }
 
-            var uploadsFolder = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "gravacoes");
-            Directory.CreateDirectory(uploadsFolder);
-
             var fileExtension = Path.GetExtension(audioFile.FileName);
             if (string.IsNullOrWhiteSpace(fileExtension))
             {
                 fileExtension = ".webm";
             }
 
-            var fileName = $"gravacao-{DateTime.UtcNow:yyyyMMddHHmmss}-{Guid.NewGuid():N}{fileExtension}";
-            var filePath = Path.Combine(uploadsFolder, fileName);
+            var fileName = string.IsNullOrWhiteSpace(audioFile.FileName)
+                ? $"gravacao-{DateTime.UtcNow:yyyyMMddHHmmss}-{Guid.NewGuid():N}{fileExtension}"
+                : Path.GetFileName(audioFile.FileName);
 
             try
             {
-                await using (var fileStream = System.IO.File.Create(filePath))
-                {
-                    await audioFile.CopyToAsync(fileStream, cancellationToken);
-                }
+                await using var tempStream = new MemoryStream();
+                await audioFile.CopyToAsync(tempStream, cancellationToken);
+                tempStream.Position = 0;
 
-                var transcription = await _openAiAudioTranscriptionService.TranscribeAsync(filePath, cancellationToken);
+                var transcription = await _openAiAudioTranscriptionService.TranscribeAsync(
+                    tempStream,
+                    fileName,
+                    audioFile.ContentType,
+                    cancellationToken);
                 var technicalSummary = await _iaAnalysisClient.AnalyzeAsync(
                     AudioTechnicalSummaryPrompt,
                     transcription,
@@ -131,7 +133,6 @@ namespace POCLeituradeVozCliente.Controllers
                 var model = BuildViewModel();
                 model.IsAudioSuccess = true;
                 model.AudioStatusMessage = "Audio transcrito e analisado com sucesso.";
-                model.AudioFilePath = $"/gravacoes/{fileName}";
                 model.AudioTranscription = transcription;
                 model.AudioTechnicalSummary = technicalSummary;
                 model.AudioAnalysis = analysis;
