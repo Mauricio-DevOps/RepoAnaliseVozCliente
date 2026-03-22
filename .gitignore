@@ -1,0 +1,8 @@
+bin/
+obj/
+temp-build/
+.vs/
+*.user
+*.suo
+appsettings.Development.json
+wwwroot/gravacoes/

@@ -1,0 +1,170 @@
+@model POCLeituradeVozCliente.Models.PocVozDoClienteViewModel
+
+@{
+    ViewData["Title"] = "POC Voz do Cliente";
+}
+
+<section class="poc-page">
+    <div class="poc-hero">
+        <div>
+            <span class="poc-eyebrow">Nova frente de trabalho</span>
+            <h1>POC Voz do Cliente</h1>
+            <p>
+                Esta tela centraliza a leitura do Excel de feedbacks e o disparo das analises com IA.
+            </p>
+        </div>
+
+        <form asp-action="PocVozDoCliente" asp-controller="Home" method="post">
+            @Html.AntiForgeryToken()
+            <button type="submit" class="btn poc-primary-btn" @(Model.HasMoreFeedbacks == false ? "disabled" : null)>Processar feedbacks</button>
+        </form>
+    </div>
+
+    <section class="poc-audio-panel mt-4">
+        <div class="poc-audio-header">
+            <div>
+                <h2>Gravacao de audio</h2>
+                <p>Grave sua fala, envie para transcricao e rode a mesma analise de departamento, dor, sentimento e plano de acao.</p>
+            </div>
+        </div>
+
+        <form asp-action="ProcessarAudio" asp-controller="Home" method="post" enctype="multipart/form-data" id="audioUploadForm">
+            @Html.AntiForgeryToken()
+            <input type="file" id="audioFile" name="audioFile" accept="audio/*" hidden />
+
+            <div class="poc-audio-actions">
+                <button type="button" class="btn poc-secondary-btn" id="startRecordingButton">Gravar audio</button>
+                <button type="button" class="btn poc-secondary-btn" id="stopRecordingButton" disabled>Parar gravacao</button>
+                <button type="button" class="btn poc-secondary-btn" id="loadRecordingButton">Carregar gravacao</button>
+                <button type="submit" class="btn poc-primary-btn" id="submitAudioButton" disabled>Enviar audio</button>
+            </div>
+
+            <p class="poc-audio-status" id="audioRecordingStatus">Nenhuma gravacao iniciada.</p>
+            <audio id="audioPreview" class="poc-audio-preview" controls hidden></audio>
+        </form>
+    </section>
+
+    @if (!string.IsNullOrWhiteSpace(Model.StatusMessage))
+    {
+        <div class="alert @(Model.IsSuccess ? "alert-success" : "alert-danger") mt-4" role="alert">
+            @Model.StatusMessage
+        </div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(Model.AudioStatusMessage))
+    {
+        <div class="alert @(Model.IsAudioSuccess ? "alert-success" : "alert-danger") mt-4" role="alert">
+            @Model.AudioStatusMessage
+        </div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(Model.AudioTranscription) || Model.AudioAnalysis is not null)
+    {
+        var audioDepartment = Model.AudioAnalysis?.DepartmentAnalyses.FirstOrDefault();
+        var audioDepartmentName = audioDepartment?.DepartmentName ?? "Nao identificado";
+        var audioPains = audioDepartment?.Pains.Any() == true
+            ? string.Join(", ", audioDepartment.Pains)
+            : "Nao identificada";
+        var audioSentiment = audioDepartment?.Sentiment ?? "Nao identificado";
+        var audioActionPlan = audioDepartment?.ActionPlan ?? "Nao identificado";
+
+        <section class="poc-audio-result mt-4">
+            <article class="poc-feedback-card">
+                <div class="poc-feedback-header">
+                    <h2>Analise do audio gravado</h2>
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(Model.AudioFilePath))
+                {
+                    <audio class="poc-audio-preview" controls src="@Model.AudioFilePath"></audio>
+                }
+
+                <div class="poc-result-line">
+                    <span class="poc-result-label">Transcricao:</span>
+                    <p>@Model.AudioTranscription</p>
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(Model.AudioTechnicalSummary))
+                {
+                    <div class="poc-result-line">
+                        <span class="poc-result-label">Resumo tecnico profissional:</span>
+                        <p>@Model.AudioTechnicalSummary</p>
+                    </div>
+                }
+
+                <div class="poc-result-line">
+                    <span class="poc-result-label">Departamento identificado:</span>
+                    <p>@audioDepartmentName</p>
+                </div>
+
+                <div class="poc-result-line">
+                    <span class="poc-result-label">Dor identificada:</span>
+                    <p>@audioPains</p>
+                </div>
+
+                <div class="poc-result-line">
+                    <span class="poc-result-label">Analise de sentimento do cliente:</span>
+                    <p>@audioSentiment</p>
+                </div>
+
+                <div class="poc-result-line">
+                    <span class="poc-result-label">Sugestao de plano de acao:</span>
+                    <p>@audioActionPlan</p>
+                </div>
+            </article>
+        </section>
+    }
+
+    <section class="poc-summary mt-4">
+        <div class="poc-summary-card">
+            <span class="poc-summary-label">Feedbacks processados</span>
+            <strong>@Model.TotalProcessed</strong>
+        </div>
+        <div class="poc-summary-card">
+            <span class="poc-summary-label">Proxima linha</span>
+            <strong>@Model.NextRowToProcess</strong>
+        </div>
+    </section>
+
+    @if (Model.Analyses.Any())
+    {
+        <section class="mt-4">
+            @foreach (var item in Model.Analyses)
+            {
+                var primaryDepartment = item.DepartmentAnalyses.FirstOrDefault();
+                var departmentName = primaryDepartment?.DepartmentName ?? "Nao identificado";
+                var pains = primaryDepartment?.Pains.Any() == true
+                    ? string.Join(", ", primaryDepartment.Pains)
+                    : "Nao identificada";
+                var sentiment = primaryDepartment?.Sentiment ?? "Nao identificado";
+                var actionPlan = primaryDepartment?.ActionPlan ?? "Nao identificado";
+
+                <article class="poc-feedback-card">
+                    <div class="poc-feedback-header">
+                        <h2>Analise do feedback @item.RowNumber</h2>
+                    </div>
+
+                    <div class="poc-result-line">
+                        <span class="poc-result-label">Departamento identificado:</span>
+                        <p>@departmentName</p>
+                    </div>
+
+                    <div class="poc-result-line">
+                        <span class="poc-result-label">Dor identificada:</span>
+                        <p>@pains</p>
+                    </div>
+
+                    <div class="poc-result-line">
+                        <span class="poc-result-label">Analise de sentimento do cliente:</span>
+                        <p>@sentiment</p>
+                    </div>
+
+                    <div class="poc-result-line">
+                        <span class="poc-result-label">Sugestao de plano de acao:</span>
+                        <p>@actionPlan</p>
+                    </div>
+                </article>
+            }
+        </section>
+    }
+</section>
